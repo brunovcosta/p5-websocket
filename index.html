@@ -1,0 +1,51 @@
+<title>Bruno</title>
+<script src="./p5.min.js"></script>
+<script src="./p5.dom.min.js"></script>
+<script>
+var socket = new WebSocket("ws://"+location.host);
+function send(obj){
+	socket.send(JSON.stringify(obj));
+}
+
+socket.onmessage = function(msg){
+	var obj = JSON.parse(msg.data);
+
+	others[obj.id] = obj;
+}
+
+var id = Math.random();
+var canvas;
+var name;
+function setup(){
+	canvas = createCanvas(640,480);
+	var inp = createInput('');
+	inp.input(function(evt){
+		name = evt.target.value;
+	});
+	textAlign(CENTER);
+
+	canvas.mouseMoved(function(){
+		send({
+			id: id,
+			x: mouseX,
+			y: mouseY,
+			name: name
+		});
+	});
+}
+
+var others = {};
+
+
+function draw(){
+	background("#ebebeb");
+	fill(color("hsl("+(360*id).toFixed()+",100%,50%)"));
+	ellipse(mouseX,mouseY,50)
+	text(name,mouseX,mouseY-30);
+	Object.values(others).forEach(function(obj){
+		fill(color("hsl("+(360*obj.id).toFixed()+",100%,50%)"));
+		ellipse(obj.x,obj.y,50)
+		text(obj.name,obj.x,obj.y-30);
+	})
+}
+</script>
