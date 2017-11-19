@@ -2,6 +2,38 @@
 <script src="./p5.min.js"></script>
 <script src="./p5.dom.min.js"></script>
 <script>
+var config = {
+	player: {
+		speed: 1,
+		radius:30
+	},
+	bomb: {
+		speed: 5,
+		radius: function(bomb){
+			var min = 5;
+			var max = 10;
+
+			var totalX = bomb.to.x - bomb.from.x;
+			var totalY = bomb.to.y - bomb.from.y;
+			var totalDir = Math.sqrt(totalX*totalX+totalY*totalY);
+
+			var currentX = bomb.pos.x - bomb.from.x;
+			var currentY = bomb.pos.y - bomb.from.y;
+			var currentDir = Math.sqrt(currentX*currentX+currentY*currentY);
+
+			var fraction = currentDir/totalDir;
+
+			return min + 4*max*fraction*(1-fraction);
+		}
+	},
+	explosion: {
+		radius: function(explosion){
+			return explosion.power*explosion.power;
+		}
+	}
+}
+
+
 var socket = new WebSocket("ws://"+location.host);
 function send(obj){
 	socket.send(JSON.stringify(obj));
@@ -10,42 +42,150 @@ function send(obj){
 socket.onmessage = function(msg){
 	var obj = JSON.parse(msg.data);
 
-	others[obj.id] = obj;
+	if(others[obj.player.id]){
+		others[obj.player.id].to = obj.to;
+		others[obj.player.id].player.name = obj.player.name;
+	}else{
+		others[obj.player.id] = obj;
+	}
 }
 
-var id = Math.random();
 var canvas;
-var name;
+var nameInput;
+var player = {
+	id: Math.random(),
+	x: Math.random()*640,
+	y: Math.random()*480,
+	name: ""
+};
+
+var to = {
+	x: player.x,
+	y: player.y
+}
+
+var bombs = [];
+var explosions = [];
+
 function setup(){
 	canvas = createCanvas(640,480);
-	var inp = createInput('');
-	inp.input(function(evt){
-		name = evt.target.value;
+	nameInput = createInput('');
+	nameInput.input(function(evt){
+		player.name = evt.target.value;
 	});
+	nameInput.position(320,480);
 	textAlign(CENTER);
 
-	canvas.mouseMoved(function(){
-		send({
-			id: id,
-			x: mouseX,
-			y: mouseY,
-			name: name
-		});
+	canvas.mouseClicked(function(){
+		if(player.x === to.x && player.y === to.y){
+			to = {
+				x: mouseX,
+				y: mouseY
+			}
+			send({
+				player: player,
+				to: to,
+				bombs: bombs
+			});
+		}else{
+			bombs.push({
+				to: {
+					x: mouseX,
+					y: mouseY
+				},
+				from: {
+					x: player.x,
+					y: player.y
+				},
+				pos: {
+					x: player.x,
+					y: player.y
+				}
+			});
+		}
 	});
+	socket.onopen=function(){
+		send({
+			player: player,
+			to: to,
+			bombs: bombs
+		});
+	};
 }
 
 var others = {};
 
 
+function step(player,to,speed){
+	var dx = to.x - player.x;
+	var dy = to.y - player.y;
+	var dir = Math.sqrt(dx*dx+dy*dy);
+
+	if(dir>speed){
+		player.x += speed*dx/dir;
+		player.y += speed*dy/dir;
+		return true;
+	}else{
+		player.x = to.x;
+		player.y = to.y;
+		return false;
+	}
+}
+
 function draw(){
+	step(player,to,config.player.speed);
+
 	background("#ebebeb");
-	fill(color("hsl("+(360*id).toFixed()+",100%,50%)"));
-	ellipse(mouseX,mouseY,50)
-	text(name,mouseX,mouseY-30);
+	fill(color("hsl("+(360*player.id).toFixed()+",100%,50%)"));
+	ellipse(player.x,player.y,config.player.radius)
+	var deadBombs = [];
+	for(var bi in bombs){
+		if(step(bombs[bi].pos,bombs[bi].to,config.bomb.speed)){
+			ellipse(bombs[bi].pos.x,bombs[bi].pos.y,config.bomb.radius(bombs[bi]));
+		}else{
+			deadBombs.push(bi);
+			explosions.push({
+				x: bombs[bi].pos.x,
+				y: bombs[bi].pos.y,
+				power: 10
+			})
+		}
+	}
+	while(true){
+		var index = deadBombs.pop();
+		if(index)
+			bombs.splice(index,1);
+		else
+			break;
+	}
+
+	var deadExplosions = [];
+	for(var ei in explosions){
+		if(explosions[ei].power--){
+			ellipse(explosions[ei].x,explosions[ei].y,config.explosion.radius(explosions[ei]));
+		}else{
+			deadExplosions.push(ei);
+		}
+	}
+	while(true){
+		var index = deadExplosions.pop();
+		if(index)
+			explosions.splice(index,1);
+		else
+			break;
+	}
+
+	fill("#000000");
+	text(player.name,player.x,player.y-30);
+
 	Object.values(others).forEach(function(obj){
-		fill(color("hsl("+(360*obj.id).toFixed()+",100%,50%)"));
-		ellipse(obj.x,obj.y,50)
-		text(obj.name,obj.x,obj.y-30);
+		step(obj.player,obj.to,1);
+		fill(color("hsl("+(360*obj.player.id).toFixed()+",100%,50%)"));
+		ellipse(obj.player.x,obj.player.y,config.player.radius)
+		fill("#000000");
+		text(obj.player.name,obj.player.x,obj.player.y-30);
 	})
+
+
 }
 </script>
